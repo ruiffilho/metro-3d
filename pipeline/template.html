@@ -1,0 +1,996 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Metrô 3D</title>
+<link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet">
+<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<script src="https://unpkg.com/deck.gl@9.0.38/dist.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ink:#16181d; --muted:#5f6670; --soft:rgba(22,24,29,.08);
+    --glass:rgba(255,255,255,.46); --glass-strong:rgba(255,255,255,.62); --edge:rgba(255,255,255,.7);
+  }
+  * { box-sizing:border-box; }
+  html,body { margin:0; height:100%; font-family:Inter,system-ui,sans-serif; color:var(--ink); background:#ecebe7; }
+  #map { position:absolute; inset:0; }
+
+  .glass {
+    background:var(--glass);
+    backdrop-filter:blur(22px) saturate(170%); -webkit-backdrop-filter:blur(22px) saturate(170%);
+    border:1px solid var(--edge);
+    box-shadow:0 1px 0 rgba(255,255,255,.75) inset, 0 12px 40px rgba(20,28,40,.14), 0 2px 6px rgba(20,28,40,.06);
+  }
+  .panel { position:absolute; z-index:10; top:18px; left:18px; width:296px; max-height:calc(100% - 36px); overflow:auto;
+    border-radius:22px; padding:18px 18px 14px; scrollbar-width:none; }
+  .panel::-webkit-scrollbar { display:none; }
+
+  /* cabeçalho: cidade / país */
+  .city { display:block; width:100%; text-align:center; background:none; border:0; padding:8px 16px 11px; border-radius:16px; cursor:pointer; color:var(--ink); }
+  .city .country { line-height:1.2; }
+  .city .name { font-size:28px; font-weight:600; letter-spacing:-.025em; display:inline-flex; align-items:center; gap:6px; }
+  .city .name svg { width:14px; height:14px; opacity:.45; transition:transform .2s; }
+  .city[aria-expanded="true"] .name svg { transform:rotate(180deg); }
+  .city .country { display:block; font-size:11px; font-weight:500; letter-spacing:.14em; text-transform:uppercase; color:var(--muted); margin-top:2px; }
+  .city:hover .name svg { opacity:.8; }
+
+  .citymenu { position:absolute; z-index:20; top:98px; left:18px; width:296px; border-radius:18px; padding:8px; display:none; }
+  .citymenu.open { display:block; animation:pop .16s ease-out; }
+  @keyframes pop { from { opacity:0; transform:translateY(-6px); } }
+  .citymenu .grp { font-size:10.5px; font-weight:600; letter-spacing:.14em; text-transform:uppercase; color:var(--muted); padding:10px 12px 4px; }
+  .citymenu .opt { display:flex; justify-content:space-between; align-items:center; width:100%; border:0; background:none; text-align:left;
+    font:inherit; font-size:14px; padding:9px 12px; border-radius:11px; cursor:pointer; color:var(--ink); }
+  .citymenu .opt:hover:not([disabled]) { background:rgba(255,255,255,.6); }
+  .citymenu .opt[disabled] { color:var(--muted); cursor:default; }
+  .citymenu .opt small { font-size:11px; color:var(--muted); }
+  .citymenu .opt .check { color:#1d1d1f; font-size:13px; }
+
+  /* relógio */
+  .clock { text-align:center; font-size:52px; font-weight:500; letter-spacing:-.035em; font-variant-numeric:tabular-nums; line-height:1; margin:16px 0 4px; }
+  .count { text-align:center; font-size:12.5px; color:var(--muted); min-height:16px; }
+  #liveTag { text-align:center; min-height:0; }
+  .live { display:inline-flex; align-items:center; gap:6px; font-size:10.5px; font-weight:600; letter-spacing:.08em; text-transform:uppercase; color:#c4122f; margin-top:6px; }
+  .live::before { content:''; width:7px; height:7px; border-radius:50%; background:#c4122f; animation:p 1.4s infinite; }
+  @keyframes p { 50% { opacity:.25; } }
+
+  .divider { height:1px; background:linear-gradient(90deg, transparent, rgba(22,24,29,.12), transparent); margin:14px 0 10px; }
+
+  .row { display:flex; align-items:center; gap:10px; margin:10px 0; font-size:12.5px; }
+  .row label { width:76px; color:var(--muted); flex:none; }
+  .row input[type=range] { flex:1; accent-color:#16181d; min-width:0; }
+  .row .val { width:44px; text-align:right; font-variant-numeric:tabular-nums; }
+  select { flex:1; font:inherit; font-size:12.5px; padding:6px 8px; border:1px solid var(--edge); border-radius:10px; background:var(--glass-strong); color:var(--ink); min-width:0; }
+
+  .seg { flex:1; display:flex; background:rgba(22,24,29,.06); border-radius:10px; padding:3px; gap:2px; }
+  .seg button { flex:1; border:0; background:none; padding:5px 0; font-size:12px; font-weight:500; border-radius:8px; color:var(--muted); }
+  .seg button.on { background:rgba(255,255,255,.9); color:var(--ink); box-shadow:0 1px 3px rgba(0,0,0,.08); }
+
+  .btns { display:flex; flex-wrap:wrap; gap:6px; margin:10px 0 4px; }
+  .btns.center { justify-content:center; }
+  button { font:inherit; font-size:12px; border:1px solid var(--edge); background:var(--glass-strong); color:var(--ink);
+    border-radius:999px; padding:6px 12px; cursor:pointer; transition:background .15s; }
+  button:hover { background:rgba(255,255,255,.85); }
+  button.primary { background:#16181d; color:#fff; border-color:#16181d; }
+  button.primary:hover { background:#2a2d34; }
+  button.on { background:#c4122f; color:#fff; border-color:#c4122f; }
+
+  .sec { font-size:10.5px; font-weight:600; text-transform:uppercase; letter-spacing:.14em; color:var(--muted); margin:16px 0 6px; text-align:center; }
+  .legend { display:grid; grid-template-columns:1fr 1fr; gap:2px 6px; }
+  .lg { display:flex; align-items:center; gap:8px; min-width:0; white-space:nowrap; font-size:12px; padding:5px 8px; border-radius:9px; cursor:pointer; user-select:none; }
+  .lg:hover { background:rgba(255,255,255,.55); }
+  .lg.off { opacity:.3; }
+  .sw { width:22px; height:6px; border-radius:3px; flex:none; }
+  .lg .ref { font-weight:600; }
+  .lgh { grid-column:1 / -1; font-size:10px; font-weight:600; letter-spacing:.12em; text-transform:uppercase; color:var(--muted); padding:6px 8px 1px; }
+  .lgh:first-child { padding-top:0; }
+  .lgh { cursor:pointer; user-select:none; border-radius:7px; justify-self:start; }
+  .lgh:hover { color:var(--ink); }
+  .lgh::after { content:' ●'; font-size:8px; vertical-align:1px; }
+  .lgh.off { opacity:.45; }
+  .lgh.off::after { content:' ○'; }
+  #status { font-size:11.5px; color:var(--muted); margin-top:12px; text-align:center; line-height:1.4; }
+
+  /* transição ao trocar de cidade */
+  .switch { position:fixed; inset:0; z-index:50; display:grid; place-items:center; opacity:0; pointer-events:none;
+    background:rgba(236,235,231,.55); backdrop-filter:blur(18px) saturate(150%); -webkit-backdrop-filter:blur(18px) saturate(150%); transition:opacity .45s ease; }
+  body.dark .switch { background:rgba(18,20,24,.6); }
+  .switch.on { opacity:1; pointer-events:auto; }
+  .switch .n { font-size:56px; font-weight:600; letter-spacing:-.03em; text-align:center; color:var(--ink); }
+  .switch .c { display:block; font-size:13px; font-weight:500; letter-spacing:.2em; text-transform:uppercase; color:var(--muted); margin-top:6px; text-align:center; }
+
+  /* botões flutuantes (nomes / tema) */
+  .fab { position:absolute; z-index:10; top:18px; right:18px; display:flex; flex-direction:column; gap:4px; padding:5px; border-radius:16px; }
+  .fab button { width:38px; height:38px; padding:0; border:0; border-radius:12px; background:transparent; display:grid; place-items:center; color:var(--ink); }
+  .fab button:hover { background:rgba(255,255,255,.55); }
+  .fab button.on { background:var(--ink); color:var(--bg-solid); }
+  .fab svg { width:18px; height:18px; }
+  .fab .aa { font-size:14px; font-weight:600; letter-spacing:-.02em; }
+  .maplibregl-ctrl-bottom-right { margin-bottom:6px; }
+
+  /* tema escuro */
+  :root { --bg-solid:#ffffff; }
+  body.dark { --ink:#eef0f3; --muted:#9aa1ab; --glass:rgba(24,27,33,.52); --glass-strong:rgba(255,255,255,.08);
+    --edge:rgba(255,255,255,.12); --bg-solid:#14161a; background:#121418; }
+  body.dark .glass { box-shadow:0 1px 0 rgba(255,255,255,.06) inset, 0 12px 40px rgba(0,0,0,.45); }
+  body.dark button:hover, body.dark .fab button:hover, body.dark .lg:hover, body.dark .citymenu .opt:hover:not([disabled]) { background:rgba(255,255,255,.1); }
+  body.dark button.primary { background:#eef0f3; color:#14161a; border-color:#eef0f3; }
+  body.dark .seg { background:rgba(255,255,255,.07); }
+  body.dark .seg button.on { background:rgba(255,255,255,.16); color:var(--ink); box-shadow:none; }
+  body.dark .divider { background:linear-gradient(90deg, transparent, rgba(255,255,255,.14), transparent); }
+  body.dark select option { background:#1c1f25; }
+  body.dark .citymenu .opt .check { color:var(--ink); }
+  body.dark .maplibregl-ctrl-group { background:#22252c; }
+  body.dark .maplibregl-ctrl-group button + button { border-top-color:#33363e; }
+  body.dark .maplibregl-ctrl-icon { filter:invert(1); }
+  body.dark .maplibregl-ctrl-attrib { background:rgba(20,22,26,.6); color:#9aa1ab; }
+  body.dark .maplibregl-ctrl-attrib a { color:#c4c9d1; }
+</style>
+</head>
+<body>
+<div id="map"></div>
+
+<div class="panel glass">
+  <button class="city" id="cityBtn" aria-haspopup="true" aria-expanded="false">
+    <span class="name"><span id="cityName">Valencia</span><svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M2.5 4.5 6 8l3.5-3.5"/></svg></span>
+    <span class="country" id="countryName">Espanha</span>
+  </button>
+
+  <div class="clock" id="clock">07:00</div>
+  <div class="count" id="count">&nbsp;</div>
+  <div id="liveTag"></div>
+
+  <div class="btns center">
+    <button class="primary" id="play">Pausar</button>
+    <button id="liveBtn">Ao vivo</button>
+  </div>
+
+  <div class="divider"></div>
+
+  <div class="row"><label>Dia</label><select id="service"></select></div>
+  <div class="row"><label>Horário</label><input id="time" type="range" min="0" max="100" value="0" step="60"><span class="val" id="timeV"></span></div>
+  <div class="row"><label>Velocidade</label><input id="speed" type="range" min="1" max="300" value="30"><span class="val" id="speedV">30×</span></div>
+  <div class="row"><label>Prédios</label>
+    <div class="seg" id="bmode"><button data-m="none" class="on">Oculto</button><button data-m="flat">2D</button><button data-m="3d">3D</button></div>
+  </div>
+
+  <div class="btns center" id="flyBtns"></div>
+
+  <div class="sec">Linhas</div>
+  <div class="legend" id="legend"></div>
+  <div id="status">Arraste com o botão direito (ou Ctrl) para girar.</div>
+</div>
+
+<div class="citymenu glass" id="cityMenu" role="menu"></div>
+<div class="switch" id="switchOverlay"><div><span class="n" id="switchName"></span><span class="c" id="switchCountry"></span></div></div>
+
+<div class="fab glass">
+  <button id="labelsBtn" title="Nomes das estações" aria-pressed="false"><span class="aa">Aa</span></button>
+  <button id="placesBtn" title="Nomes das cidades" aria-pressed="true">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18"/><path d="M5 21V9l5-3v15"/><path d="M10 21V4l9 4v13"/><path d="M13 10h3M13 14h3M13 18h3"/></svg>
+  </button>
+  <button id="themeBtn" title="Tema escuro" aria-pressed="false">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/></svg>
+  </button>
+</div>
+
+<script id="chimes" type="application/json">__CHIMES__</script>
+<script id="city-valencia" type="application/json">__VLC__</script>
+<script id="city-sao-paulo" type="application/json">__SP__</script>
+<script id="city-lisboa" type="application/json">__LX__</script>
+
+<script>
+/* ===================== CORE (testável sem navegador) ===================== */
+const CORE = (() => {
+  let LON0 = -0.38, LAT0 = 39.47, K = Math.cos(LAT0 * Math.PI / 180);
+  const M = 111320;
+  function setOrigin(lon, lat) { LON0 = lon; LAT0 = lat; K = Math.cos(lat * Math.PI / 180); }
+  const toXY = p => [(p[0] - LON0) * K * M, (p[1] - LAT0) * M];
+  const dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]);
+
+  function hexToRgb(h) {
+    h = String(h || '').replace('#', '');
+    if (!/^[0-9a-f]{6}$/i.test(h)) return [120, 120, 120];
+    return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)];
+  }
+
+  // ---------- Junta as vias de uma relação OSM em trechos contínuos ----------
+  // Se duas vias não se tocam (> 30 m), começa um trecho novo em vez de ligar com uma reta.
+  function stitchPieces(ways) {
+    ways = ways.filter(w => w && w.length >= 2);
+    const pieces = [];
+    const gap = (p, q) => dist(toXY(p), toXY(q));
+    let cur = null, curWays = 0;
+    for (const w of ways) {
+      if (!cur) { cur = w.slice(); curWays = 1; continue; }
+      const end = cur[cur.length - 1], start = cur[0];
+      const opts = [{ d: gap(end, w[0]), rev: false, flip: false }, { d: gap(end, w[w.length - 1]), rev: true, flip: false }];
+      if (curWays === 1) opts.push({ d: gap(start, w[0]), rev: false, flip: true }, { d: gap(start, w[w.length - 1]), rev: true, flip: true });
+      opts.sort((x, y) => x.d - y.d);
+      const o = opts[0];
+      if (o.d > 30) { pieces.push(cur); cur = w.slice(); curWays = 1; continue; }
+      if (o.flip) cur.reverse();
+      const seg = o.rev ? w.slice().reverse() : w;
+      cur.push(...(o.d < 0.5 ? seg.slice(1) : seg));
+      curWays++;
+    }
+    if (cur) pieces.push(cur);
+    // junta trechos que se tocam pelas pontas (vias fora de ordem na relação)
+    let merged = true;
+    while (merged) {
+      merged = false;
+      outer: for (let i = 0; i < pieces.length; i++) for (let j = 0; j < pieces.length; j++) {
+        if (i === j) continue;
+        const P = pieces[i], Q = pieces[j];
+        let R = null;
+        if (gap(P[P.length - 1], Q[0]) <= 30) R = P.concat(Q.slice(1));
+        else if (gap(P[P.length - 1], Q[Q.length - 1]) <= 30) R = P.concat(Q.slice().reverse().slice(1));
+        if (R) { pieces[i] = R; pieces.splice(j, 1); merged = true; break outer; }
+      }
+    }
+    return pieces;
+  }
+  function parseOverpass(json) {
+    const out = [];
+    for (const el of json.elements || []) {
+      if (el.type !== 'relation' || !el.members) continue;
+      const tg = el.tags || {};
+      if (/renfe|cercan/i.test(`${tg.network || ''} ${tg.operator || ''}`)) continue;
+      const ways = el.members.filter(m => m.type === 'way' && m.geometry && !/platform/i.test(m.role || ''))
+        .map(m => m.geometry.map(g => [+g.lon.toFixed(6), +g.lat.toFixed(6)]));
+      for (const piece of stitchPieces(ways)) if (piece.length >= 2) out.push(piece);
+    }
+    return out;
+  }
+
+  // ---------- Candidatos de geometria (trilhos) ----------
+  function makeCand(ll, src) {
+    const xy = ll.map(toXY), cum = [0];
+    for (let i = 1; i < xy.length; i++) cum.push(cum[i - 1] + dist(xy[i - 1], xy[i]));
+    return { ll, xy, cum, src };
+  }
+  function project(c, P) { // P em XY
+    let best = { d: Infinity };
+    const xy = c.xy;
+    for (let i = 0; i < xy.length - 1; i++) {
+      const a = xy[i], b = xy[i + 1], dx = b[0] - a[0], dy = b[1] - a[1], L = dx * dx + dy * dy;
+      let t = L ? ((P[0] - a[0]) * dx + (P[1] - a[1]) * dy) / L : 0;
+      t = t < 0 ? 0 : t > 1 ? 1 : t;
+      const qx = a[0] + t * dx, qy = a[1] + t * dy, d = Math.hypot(P[0] - qx, P[1] - qy);
+      if (d < best.d) best = { d, i, t, along: c.cum[i] + t * Math.sqrt(L) };
+    }
+    return best;
+  }
+  const lerpLL = (c, pr) => {
+    const a = c.ll[pr.i], b = c.ll[pr.i + 1];
+    return [a[0] + (b[0] - a[0]) * pr.t, a[1] + (b[1] - a[1]) * pr.t];
+  };
+  function subpath(c, pa, pb) {
+    if (pa.along <= pb.along) {
+      const out = [lerpLL(c, pa)];
+      for (let i = pa.i + 1; i <= pb.i; i++) out.push(c.ll[i]);
+      out.push(lerpLL(c, pb));
+      return out;
+    }
+    return subpath(c, pb, pa).reverse();
+  }
+
+  // Geometria entre duas estações: prefere trilho do OSM, depois shape do GTFS, depois reta
+  function segment(cands, A, B, tol = 120) {
+    const a = toXY(A), b = toXY(B), S = dist(a, b);
+    let best = null;
+    for (const c of cands) {
+      const pa = project(c, a); if (pa.d > tol) continue;
+      const pb = project(c, b); if (pb.d > tol) continue;
+      const L = Math.abs(pb.along - pa.along);
+      if (L < 0.8 * S || L > 1.6 * S + 400) continue;
+      const score = L + (c.src === 'osm' ? 0 : 1e7);
+      if (!best || score < best.score) best = { score, c, pa, pb };
+    }
+    return best ? { pts: subpath(best.c, best.pa, best.pb), src: best.c.src } : { pts: [A, B], src: 'reta' };
+  }
+
+  // Calcula a geometria de todos os pares de estações consecutivas.
+  // Pares que não casam com um trilho (viagens que pulam estações) são roteados pela rede de estações.
+  function buildSegments(patterns, stops, cands) {
+    const segs = new Map(), lenOf = pts => { let L = 0; for (let i = 1; i < pts.length; i++) L += dist(toXY(pts[i - 1]), toXY(pts[i])); return L; };
+    for (const p of patterns) for (let k = 0; k < p.stops.length - 1; k++) {
+      const a = p.stops[k], b = p.stops[k + 1], key = a + '|' + b;
+      if (segs.has(key)) continue;
+      const rev = segs.get(b + '|' + a);
+      if (rev) { segs.set(key, { pts: rev.pts.slice().reverse(), src: rev.src }); continue; }
+      segs.set(key, segment(cands, stops[a], stops[b]));
+    }
+    // grafo com os trechos bons
+    const adj = new Map(), addE = (a, b, g) => { if (!adj.has(a)) adj.set(a, []); adj.get(a).push({ b, g, w: lenOf(g.pts) }); };
+    for (const [key, g] of segs) if (g.src !== 'reta') {
+      const [a, b] = key.split('|').map(Number);
+      addE(a, b, g); addE(b, a, { pts: g.pts.slice().reverse(), src: g.src });
+    }
+    for (const [key, g] of segs) {
+      if (g.src !== 'reta') continue;
+      const [a, b] = key.split('|').map(Number);
+      const S = dist(toXY(stops[a]), toXY(stops[b]));
+      // Dijkstra simples (rede pequena)
+      const D = new Map([[a, 0]]), prev = new Map(), done = new Set();
+      while (true) {
+        let u = -1, du = Infinity;
+        for (const [n, d] of D) if (!done.has(n) && d < du) { u = n; du = d; }
+        if (u < 0 || u === b || du > 3 * S + 3000) break;
+        done.add(u);
+        for (const e of adj.get(u) || []) {
+          const nd = du + e.w;
+          if (nd < (D.has(e.b) ? D.get(e.b) : Infinity)) { D.set(e.b, nd); prev.set(e.b, { u, e }); }
+        }
+      }
+      if (!prev.has(b)) continue;
+      const chain = []; let n = b;
+      while (n !== a) { const p = prev.get(n); chain.push(p.e.g.pts); n = p.u; }
+      chain.reverse();
+      const pts = [];
+      for (const c of chain) pts.push(...(pts.length ? c.slice(1) : c));
+      segs.set(key, { pts, src: 'rede' });
+    }
+    return segs;
+  }
+
+  // Geometria de um padrão: vértices + (segmento, fração) por vértice
+  function patternGeom(patStops, segs) {
+    const pts = [], seg = [], frac = [], segLen = [], src = {};
+    for (let k = 0; k < patStops.length - 1; k++) {
+      const g = segs.get(patStops[k] + '|' + patStops[k + 1]);
+      src[g.src] = (src[g.src] || 0) + 1;
+      const xy = g.pts.map(toXY), cum = [0];
+      for (let i = 1; i < xy.length; i++) cum.push(cum[i - 1] + dist(xy[i - 1], xy[i]));
+      const L = cum[cum.length - 1] || 1;
+      segLen.push(L);
+      for (let i = 0; i < g.pts.length; i++) { pts.push(g.pts[i]); seg.push(k); frac.push(cum[i] / L); }
+    }
+    return { pts, seg, frac, segLen, src };
+  }
+
+  // Horários com resolução de minuto: espalha paradas com o mesmo minuto pela distância
+  function smoothTimes(t, segLen) {
+    const n = t.length, D = [0];
+    for (let k = 0; k < n - 1; k++) D.push(D[k] + segLen[k]);
+    const anchors = [0];
+    for (let i = 1; i < n; i++) if (t[i] !== t[i - 1]) anchors.push(i);
+    if (anchors[anchors.length - 1] !== n - 1) anchors.push(n - 1);
+    const out = t.slice();
+    for (let j = 0; j < anchors.length - 1; j++) {
+      const a = anchors[j], b = anchors[j + 1], span = D[b] - D[a] || 1;
+      for (let i = a + 1; i < b; i++) out[i] = t[a] + (t[b] - t[a]) * (D[i] - D[a]) / span;
+    }
+    if (n > 1 && out[n - 1] <= out[n - 2]) out[n - 1] = out[n - 2] + 30;
+    return out;
+  }
+
+  // Timestamps por vértice, com parada curta em cada estação
+  function tripTimestamps(geom, times) {
+    const n = times.length, dep = [], arr = [];
+    for (let k = 0; k < n - 1; k++) {
+      const gap = times[k + 1] - times[k];
+      const dwellA = k === 0 ? 0 : Math.min(20, 0.3 * gap, 0.3 * (times[k] - times[k - 1]));
+      const dwellB = k + 1 === n - 1 ? 0 : Math.min(20, 0.3 * gap, 0.3 * (times[k + 2] - times[k + 1]));
+      dep.push(times[k] + dwellA / 2); arr.push(times[k + 1] - dwellB / 2);
+    }
+    const ts = new Float64Array(geom.pts.length);
+    for (let v = 0; v < ts.length; v++) { const k = geom.seg[v]; ts[v] = dep[k] + (arr[k] - dep[k]) * geom.frac[v]; }
+    return ts;
+  }
+
+  function posAt(path, ts, T) {
+    if (T < ts[0] || T > ts[ts.length - 1]) return null;
+    let lo = 0, hi = ts.length - 1;
+    while (hi - lo > 1) { const m = (lo + hi) >> 1; if (ts[m] <= T) lo = m; else hi = m; }
+    const a = path[lo], b = path[hi], span = ts[hi] - ts[lo], f = span > 0 ? (T - ts[lo]) / span : 0;
+    return [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f];
+  }
+
+  // Decodifica as viagens de um serviço: [padrão, início(min), deltas(min)...]
+  function decodeTrips(rows) {
+    return rows.map(r => {
+      const t = [r[1] * 60];
+      for (let i = 2; i < r.length; i++) t.push(t[t.length - 1] + r[i] * 60);
+      return { pat: r[0], raw: t, start: t[0], end: t[t.length - 1] };
+    });
+  }
+
+  // Viagens geradas a partir de frequências (ex.: São Paulo): uma partida a cada "headway" em cada janela
+  function tripsFromFreq(freq, offsets) {
+    const out = [];
+    for (const [pat, a, b, h] of freq) {
+      const off = offsets[pat];
+      for (let dep = a; dep <= b; dep += h) { const raw = off.map(o => dep + o); out.push({ pat, raw, start: raw[0], end: raw[raw.length - 1] }); }
+    }
+    return out;
+  }
+
+  return { tripsFromFreq, setOrigin, hexToRgb, stitchPieces, parseOverpass, makeCand, segment, buildSegments, patternGeom, smoothTimes, tripTimestamps, posAt, decodeTrips };
+})();
+if (typeof module !== 'undefined') module.exports = CORE;
+/* =================== FIM CORE =================== */
+</script>
+
+<script>
+if (typeof window !== 'undefined' && window.maplibregl) (function () {
+  const $ = id => document.getElementById(id);
+  const status = msg => { $('status').innerHTML = msg; };
+  /* ---------- Cidades ---------- */
+  const CITY_CFG = {
+    valencia: { name: 'Valencia', country: 'Espanha', tz: 'Europe/Madrid', lon: -0.38, lat: 39.47,
+      modes: { metro: 'metrô', tram: 'tram' },
+      views: [
+        ['centro', 'Centro', { center: [-0.3763, 39.4735], zoom: 15.2, pitch: 62, bearing: -28 }],
+        ['ayto', 'Pl. Ayuntamiento', { center: [-0.3765, 39.4697], zoom: 17, pitch: 68, bearing: 25 }],
+        ['cac', 'Ciutat de les Arts', { center: [-0.3520, 39.4560], zoom: 15.8, pitch: 64, bearing: -60 }],
+        ['geral', 'Visão geral', { center: [-0.4050, 39.4900], zoom: 11.3, pitch: 0, bearing: 0 }] ] },
+    'sao-paulo': { name: 'São Paulo', country: 'Brasil', tz: 'America/Sao_Paulo', lon: -46.63, lat: -23.55,
+      modes: {},
+      views: [
+        ['centro', 'Centro', { center: [-46.6345, -23.5470], zoom: 14.6, pitch: 60, bearing: -20 }],
+        ['paulista', 'Av. Paulista', { center: [-46.6560, -23.5630], zoom: 15, pitch: 62, bearing: 50 }],
+        ['luz', 'Luz', { center: [-46.6350, -23.5350], zoom: 16, pitch: 64, bearing: -35 }],
+        ['geral', 'Visão geral', { center: [-46.6100, -23.5600], zoom: 10.2, pitch: 0, bearing: 0 }] ] },
+    lisboa: { name: 'Lisboa', country: 'Portugal', tz: 'Europe/Lisbon', lon: -9.14, lat: 38.72,
+      modes: {},
+      views: [
+        ['baixa', 'Baixa', { center: [-9.1380, 38.7110], zoom: 15, pitch: 62, bearing: -20 }],
+        ['oriente', 'Oriente', { center: [-9.1000, 38.7680], zoom: 15, pitch: 62, bearing: 40 }],
+        ['ponte', 'Ponte 25 de Abril', { center: [-9.1770, 38.6900], zoom: 13.6, pitch: 58, bearing: 30 }],
+        ['geral', 'Visão geral', { center: [-9.1500, 38.7100], zoom: 10.3, pitch: 0, bearing: 0 }] ] }
+  };
+  const CITY_KEY = 'metro3d-city';
+  let cityId = (location.hash || '').slice(1);
+  if (!CITY_CFG[cityId]) cityId = 'valencia';
+  const CFG = CITY_CFG[cityId];
+  CORE.setOrigin(CFG.lon, CFG.lat);
+  const KLAT = Math.cos(CFG.lat * Math.PI / 180);
+  const G = JSON.parse($('city-' + cityId).textContent);
+  const FREQ = !!G.freq;
+  if (FREQ) { G.services = { all: [] }; G.labels = { all: 'Todos os dias' }; G.calendar = {}; }
+  const lineName = ref => (G.lines[ref] && G.lines[ref].name) || (/^\d/.test(ref) ? 'L' + ref : ref);
+  const modeName = m => CFG.modes[m] || m;
+  document.title = CFG.name + ' · Metrô 3D';
+  $('cityName').textContent = CFG.name; $('countryName').textContent = CFG.country;
+  const fmtD = s => `${s.slice(6, 8)}/${s.slice(4, 6)}/${s.slice(0, 4)}`;
+
+  const LINES = {};
+  for (const [ref, l] of Object.entries(G.lines)) {
+    const color = CORE.hexToRgb(l.color);
+    // a rede usa um tom suavizado da cor da linha; o rastro dos trens usa a cor cheia
+    LINES[ref] = { ref, color, mode: l.mode,
+      tintLight: color.map(c => Math.round(c + (255 - c) * 0.45)),   // tom claro para a rede no tema claro
+      tintDark: color.map(c => Math.round(c * 0.62 + 20 * 0.38)) };  // tom escurecido no tema escuro
+  }
+  for (const L of Object.values(LINES)) L.tint = L.tintLight;
+  const STOPS = G.stops;
+
+  /* ---------- Estilo monocromático ---------- */
+  const style = {
+    version: 8,
+    sources: { omt: { type: 'vector', url: 'https://tiles.openfreemap.org/planet' } },
+    glyphs: 'https://tiles.openfreemap.org/fonts/{fontstack}/{range}.pbf',
+    light: { anchor: 'viewport', color: '#ffffff', intensity: 0.28, position: [1.4, 210, 35] },
+    layers: [
+      { id: 'bg', type: 'background', paint: { 'background-color': '#ecebe7' } },
+      { id: 'landcover', type: 'fill', source: 'omt', 'source-layer': 'landcover',
+        paint: { 'fill-color': ['match', ['get', 'class'], 'wood', '#b9d9a0', 'grass', '#cde5b4', 'farmland', '#e3ead2', 'wetland', '#c6e0cf', 'sand', '#efe6cc', '#e4e8d8'],
+                 'fill-opacity': 0.85 } },
+      { id: 'landuse-green', type: 'fill', source: 'omt', 'source-layer': 'landuse',
+        filter: ['in', ['get', 'class'], ['literal', ['cemetery', 'pitch', 'stadium', 'playground', 'garden']]],
+        paint: { 'fill-color': '#d3e8c0' } },
+      { id: 'park', type: 'fill', source: 'omt', 'source-layer': 'park', paint: { 'fill-color': '#bfe0a6', 'fill-opacity': 0.9 } },
+      { id: 'water', type: 'fill', source: 'omt', 'source-layer': 'water', paint: { 'fill-color': '#9fcbe8' } },
+      { id: 'waterway', type: 'line', source: 'omt', 'source-layer': 'waterway',
+        paint: { 'line-color': '#9fcbe8', 'line-width': ['interpolate', ['linear'], ['zoom'], 10, 0.8, 16, 4] } },
+      { id: 'aeroway', type: 'fill', source: 'omt', 'source-layer': 'aeroway', filter: ['==', ['geometry-type'], 'Polygon'], paint: { 'fill-color': '#e6e5e1' } },
+      { id: 'rail', type: 'line', source: 'omt', 'source-layer': 'transportation',
+        filter: ['in', ['get', 'class'], ['literal', ['rail', 'transit']]],
+        paint: { 'line-color': '#cfcfcb', 'line-width': ['interpolate', ['linear'], ['zoom'], 12, 0.5, 17, 2], 'line-dasharray': [3, 2] } },
+      { id: 'roads-minor', type: 'line', source: 'omt', 'source-layer': 'transportation', minzoom: 12.5,
+        filter: ['in', ['get', 'class'], ['literal', ['minor', 'service', 'tertiary', 'path', 'track']]],
+        layout: { 'line-cap': 'round', 'line-join': 'round' },
+        paint: { 'line-color': '#fbfbfa', 'line-width': ['interpolate', ['exponential', 1.6], ['zoom'], 12, 0.4, 18, 12] } },
+      { id: 'roads-major', type: 'line', source: 'omt', 'source-layer': 'transportation',
+        filter: ['in', ['get', 'class'], ['literal', ['motorway', 'trunk', 'primary', 'secondary']]],
+        layout: { 'line-cap': 'round', 'line-join': 'round' },
+        paint: { 'line-color': '#ffffff', 'line-width': ['interpolate', ['exponential', 1.6], ['zoom'], 10, 0.8, 18, 22] } },
+      { id: 'buildings-flat', type: 'fill', source: 'omt', 'source-layer': 'building', minzoom: 13,
+        layout: { visibility: 'none' }, paint: { 'fill-color': '#ffffff', 'fill-outline-color': '#dcdcd8' } },
+      { id: 'buildings', type: 'fill-extrusion', source: 'omt', 'source-layer': 'building', minzoom: 14,
+        paint: { 'fill-extrusion-color': '#ffffff',
+          'fill-extrusion-height': ['coalesce', ['get', 'render_height'], 8],
+          'fill-extrusion-base': ['coalesce', ['get', 'render_min_height'], 0],
+          'fill-extrusion-opacity': 0.85, 'fill-extrusion-vertical-gradient': false }, layout: { visibility: 'none' } },
+      // nomes de bairros: só de perto, discretos
+      { id: 'hoods', type: 'symbol', source: 'omt', 'source-layer': 'place', minzoom: 13,
+        filter: ['any',
+          ['==', ['get', 'class'], 'suburb'],
+          ['all', ['in', ['get', 'class'], ['literal', ['quarter', 'neighbourhood']]], ['>=', ['zoom'], 14.5]]],
+        layout: {
+          'text-field': ['get', 'name'], 'text-font': ['literal', ['Noto Sans Regular']],
+          'text-size': ['interpolate', ['linear'], ['zoom'], 13, 11, 17, 13.5],
+          'text-max-width': 7, 'text-padding': 10, 'text-letter-spacing': 0.03
+        },
+        paint: { 'text-color': '#7f858e', 'text-halo-color': 'rgba(255,255,255,0.85)', 'text-halo-width': 1.4 } },
+      // nomes de cidades e municípios
+      { id: 'places', type: 'symbol', source: 'omt', 'source-layer': 'place',
+        filter: ['any',
+          ['in', ['get', 'class'], ['literal', ['city', 'town']]],
+          ['all', ['==', ['get', 'class'], 'village'], ['>=', ['zoom'], 11.5]]],
+        layout: {
+          'text-field': ['get', 'name'],
+          'text-font': ['match', ['get', 'class'], 'city', ['literal', ['Noto Sans Bold']], ['literal', ['Noto Sans Regular']]],
+          'text-size': ['interpolate', ['linear'], ['zoom'],
+            8, ['match', ['get', 'class'], 'city', 14, 'town', 10.5, 10],
+            14, ['match', ['get', 'class'], 'city', 20, 'town', 15, 12]],
+          'text-transform': ['match', ['get', 'class'], 'city', 'uppercase', 'none'],
+          'text-letter-spacing': ['match', ['get', 'class'], 'city', 0.12, 0.02],
+          'text-max-width': 8, 'text-padding': 6,
+          'symbol-sort-key': ['match', ['get', 'class'], 'city', 0, 'town', 1, 2]
+        },
+        paint: { 'text-color': '#4a4f57', 'text-halo-color': 'rgba(255,255,255,0.9)', 'text-halo-width': 1.6,
+          'text-opacity': ['interpolate', ['linear'], ['zoom'], 14, 1, 16, 0.55] } }
+    ]
+  };
+  const VIEWS = Object.fromEntries(CFG.views.map(([k, , v]) => [k, v]));
+  $('flyBtns').innerHTML = CFG.views.map(([k, label]) => `<button data-fly="${k}">${label}</button>`).join('');
+  // cada cidade abre na visão geral
+  const START_VIEW = (CFG.views.find(v => v[0] === 'geral') || CFG.views[0])[2];
+  const map = new maplibregl.Map({ container: 'map', style, ...START_VIEW, maxPitch: 78, antialias: false,
+    pixelRatio: Math.min(window.devicePixelRatio || 1, 1.5), fadeDuration: 0 });
+  map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'bottom-right');
+  window.__map = map;
+  // se o servidor de mapas falhar em alguns blocos, tenta de novo depois (no máximo a cada 5 s)
+  let retryT = null;
+  map.on('error', e => { if (e.sourceId === 'omt' && !retryT) retryT = setTimeout(() => { retryT = null; try { map.style.sourceCaches.omt.reload(); } catch (err) {} }, 5000); });
+  map.on('error', e => { (window.__mapErr ||= []).push({ msg: e.error && e.error.message, src: e.sourceId, tile: e.tile && e.tile.tileID && e.tile.tileID.canonical && [e.tile.tileID.canonical.z, e.tile.tileID.canonical.x, e.tile.tileID.canonical.y] }); });
+  document.querySelectorAll('[data-fly]').forEach(b => b.onclick = () => map.flyTo({ ...VIEWS[b.dataset.fly], duration: 2500, essential: true }));
+
+  const tip = { background: '#1d1d1f', color: '#fff', borderRadius: '8px', fontSize: '12px', fontFamily: 'Inter, system-ui, sans-serif' };
+  const NODEPTH = { depthCompare: 'always', depthWriteEnabled: false };
+  const getTooltip = ({ object, layer }) => {
+      if (!object) return null;
+      if (layer.id === 'heads') return { html: `<b>${lineName(object.line)}</b> → ${object.head}`, style: tip };
+      if (layer.id === 'stations') return { html: object.name, style: tip };
+      if (layer.id === 'lines') return { html: `<b>${lineName(object.line)}</b> ${object.name}`, style: tip };
+      return null;
+    };
+  let overlay = null;
+  function makeOverlay(interleaved) {
+    if (overlay) map.removeControl(overlay);
+    overlay = new deck.MapboxOverlay({ interleaved, getTooltip, useDevicePixels: Math.min(window.devicePixelRatio || 1, 1.5) });
+    map.addControl(overlay);
+  }
+  makeOverlay(false);
+
+  /* ---------- Geometria ---------- */
+  let geoms = [], segSrc = {}, geomVer = 0, SEGMAP = null;
+  function buildGeoms() {
+    segSrc = {};
+    const segs = new Map();
+    for (const [k, pts] of Object.entries(G.segs)) {
+      const [a, b] = k.split('|');
+      const o = [...(G.segO[k] || '')].map(c => c === '+' ? 1 : -1), f = G.segF[k] || {};
+      const fr = {}; for (const [l, arr] of Object.entries(f)) fr[l] = arr.slice().reverse();
+      segs.set(k, { pts, src: 'osm', o, f });
+      segs.set(b + '|' + a, { pts: pts.slice().reverse(), src: 'osm', o: o.slice().reverse(), f: fr });
+    }
+    SEGMAP = segs;
+    for (const p of G.patterns) for (let k = 0; k < p.stops.length - 1; k++) {
+      const key = p.stops[k] + '|' + p.stops[k + 1];
+      if (!segs.has(key)) segs.set(key, { pts: [STOPS[p.stops[k]].slice(0, 2), STOPS[p.stops[k + 1]].slice(0, 2)], src: 'reta' });
+    }
+    geoms = G.patterns.map(p => {
+      const g = CORE.patternGeom(p.stops, segs);
+      for (const [k, v] of Object.entries(g.src)) segSrc[k] = (segSrc[k] || 0) + v;
+      return g;
+    });
+    buildLanes();
+    geoms.forEach(compactGeom);
+    geomVer++;
+    applyOffsets();
+    for (const t of trips) t.ts = null; // força recálculo
+    activeKey = '';
+  }
+
+  /* ---------- Linhas lado a lado nos trechos compartilhados ---------- */
+  const LANE_PX = 6;            // distância entre linhas paralelas, em pixels de tela
+  const LINE_W = 4;               // espessura única de linhas e rastros, em pixels
+  let offVer = 0, offDirty = true;
+  function buildLanes() {
+    // faixas pré-calculadas por ponto do trilho (G.segF / G.segO): quais linhas dividem fisicamente
+    // aquele trilho, em que ordem (ramais saem pelo lado certo) e o sentido de referência do corredor
+    const K = KLAT, M = 111320;
+    G.patterns.forEach((p, i) => {
+      const g = geoms[i], n = g.pts.length;
+      g.base = g.pts.map(q => q.slice());
+      g.lane = new Float32Array(n); g.nx = new Float32Array(n); g.ny = new Float32Array(n);
+      let pieceStart = 0;
+      for (let v = 0; v < n; v++) {
+        const k = g.seg[v], a = p.stops[k], b = p.stops[k + 1];
+        if (v > 0 && g.seg[v - 1] !== k) pieceStart = v;
+        const info = SEGMAP.get(a + '|' + b) || {};
+        const j = v - pieceStart;
+        const fArr = info.f && info.f[p.line];
+        g.lane[v] = fArr ? (fArr[j] || 0) : 0;
+        const oj = info.o && info.o.length ? info.o[Math.min(j, info.o.length - 1)] : 1;
+        // normal em "miter": média das normais dos dois segmentos vizinhos, escalada para manter a distância nas curvas
+        const dir = (a < b ? 1 : -1) * oj;       // normal sempre do mesmo lado no sentido de referência do corredor
+        const nrm = (i, j) => { const tx = (g.base[j][0] - g.base[i][0]) * K * M, ty = (g.base[j][1] - g.base[i][1]) * M, tl = Math.hypot(tx, ty);
+          return tl > 0.01 ? [-ty / tl, tx / tl] : null; };
+        const n1 = v > 0 && g.seg[v - 1] === k ? nrm(v - 1, v) : null;
+        const n2 = v < n - 1 && g.seg[v + 1] === k ? nrm(v, v + 1) : null;
+        let nx = 0, ny = 0;
+        if (n1 && n2) {
+          let mx = n1[0] + n2[0], my = n1[1] + n2[1]; const ml = Math.hypot(mx, my) || 1; mx /= ml; my /= ml;
+          const sc = 1 / Math.max(0.5, mx * n1[0] + my * n1[1]);
+          nx = mx * sc; ny = my * sc;
+        } else if (n1 || n2) { [nx, ny] = n1 || n2; }
+        g.nx[v] = nx * dir; g.ny[v] = ny * dir;
+      }
+    });
+  }
+  // Simplifica cada traçado: mantém só os pontos necessários (curvas, mudanças de faixa e estações).
+  // Reduz muito o trabalho de desenhar trens e rastros, sem mudar a aparência.
+  function compactGeom(g) {
+    const n = g.base.length; if (n < 3) return;
+    const K = KLAT, M = 111320, X = g.base.map(p => [p[0] * K * M, p[1] * M]);
+    const keep = new Uint8Array(n); keep[0] = keep[n - 1] = 1;
+    for (let v = 1; v < n - 1; v++) {
+      if (g.seg[v] !== g.seg[v - 1] || g.seg[v] !== g.seg[v + 1]) keep[v] = 1;               // limites de trecho (estações)
+      if (Math.abs(g.lane[v] - g.lane[v - 1]) > 1e-3 || Math.abs(g.lane[v] - g.lane[v + 1]) > 1e-3) keep[v] = 1; // mudança de faixa
+    }
+    // Douglas-Peucker (tolerância 1,5 m) entre pontos já mantidos
+    const idx = []; for (let v = 0; v < n; v++) if (keep[v]) idx.push(v);
+    for (let q = 0; q < idx.length - 1; q++) {
+      const st = [[idx[q], idx[q + 1]]];
+      while (st.length) {
+        const [i, j] = st.pop(); if (j - i < 2) continue;
+        const a = X[i], b = X[j], dx = b[0] - a[0], dy = b[1] - a[1], L = Math.hypot(dx, dy) || 1;
+        let md = 0, mi = -1;
+        for (let k = i + 1; k < j; k++) { const d = Math.abs(dy * (X[k][0] - a[0]) - dx * (X[k][1] - a[1])) / L; if (d > md) { md = d; mi = k; } }
+        if (md > 1.5) { keep[mi] = 1; st.push([i, mi], [mi, j]); }
+      }
+    }
+    const sel = []; for (let v = 0; v < n; v++) if (keep[v]) sel.push(v);
+    const pick = arr => sel.map(v => arr[v]);
+    g.base = pick(g.base); g.pts = pick(g.pts); g.seg = pick(g.seg); g.frac = pick(g.frac);
+    g.lane = Float32Array.from(pick(g.lane)); g.nx = Float32Array.from(pick(g.nx)); g.ny = Float32Array.from(pick(g.ny));
+  }
+  function applyOffsets() {
+    if (!geoms.length || !geoms[0].base) return;
+    const K = KLAT, M = 111320;
+    const mpp = 78271.517 * KLAT / Math.pow(2, map.getZoom());
+    const S = LANE_PX * mpp;
+    for (const g of geoms) {
+      const pts = new Array(g.base.length);
+      for (let v = 0; v < pts.length; v++) {
+        const d = g.lane[v] * S;
+        pts[v] = [g.base[v][0] + d * g.nx[v] / (K * M), g.base[v][1] + d * g.ny[v] / M];
+      }
+      g.pts = pts;
+    }
+    offVer++; offDirty = false; offZoom = map.getZoom();
+  }
+  let offZoom = -1;
+  // recalcular as faixas é caro: durante o zoom só refaz a cada meio nível; no fim do zoom, refaz exato
+  map.on('zoom', () => { if (Math.abs(map.getZoom() - offZoom) > 0.5) offDirty = true; });
+  map.on('zoomend', () => { if (Math.abs(map.getZoom() - offZoom) > 0.01) offDirty = true; });
+
+  /* ---------- Serviço / viagens ---------- */
+  let service = null, trips = [], tMin = 0, tMax = 86400;
+  function madridNow() {
+    const parts = Object.fromEntries(new Intl.DateTimeFormat('en-CA', { timeZone: CFG.tz, year: 'numeric', month: '2-digit',
+      day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' }).formatToParts(new Date()).map(p => [p.type, p.value]));
+    let date = new Date(Date.UTC(+parts.year, +parts.month - 1, +parts.day));
+    let secs = +parts.hour * 3600 + +parts.minute * 60 + +parts.second;
+    if (secs < 4 * 3600) { date = new Date(date - 864e5); secs += 86400; } // madrugada = dia de serviço anterior
+    const ymd = date.toISOString().slice(0, 10).replace(/-/g, '');
+    return { ymd, secs, wd: date.getUTCDay() };
+  }
+  function serviceFor(ymd, wd) {
+    if (FREQ) return 'all';
+    if (G.calendar[ymd]) return G.calendar[ymd];
+    if (G.services.du) return wd === 0 ? 'dom' : wd === 6 ? 'sab' : 'du';
+    return wd === 0 ? '3078' : wd === 6 ? '3076' : wd === 5 ? '3395' : '3091';
+  }
+  const today = madridNow(), todaySvc = serviceFor(today.ymd, today.wd);
+  const sel = $('service');
+  sel.innerHTML = `<option value="${todaySvc}">Hoje (${fmtD(today.ymd).slice(0, 5)}) · ${G.labels[todaySvc] || todaySvc}</option>` +
+    Object.keys(G.services).filter(s => s !== todaySvc).map(s => `<option value="${s}">${G.labels[s] || s}</option>`).join('');
+
+  function setService(s) {
+    service = s;
+    trips = FREQ ? CORE.tripsFromFreq(G.freq, G.offsets) : CORE.decodeTrips(G.services[s]);
+    tMin = Math.min(...trips.map(t => t.start)) - 300;
+    tMax = Math.max(...trips.map(t => t.end)) + 300;
+    $('time').min = tMin; $('time').max = tMax;
+    if (T < tMin || T > tMax) T = Math.max(tMin, 7 * 3600);
+    activeKey = '';
+    legend();
+  }
+  function ensureTs(t) {
+    if (!t.ts) {
+      const g = geoms[t.pat];
+      t.times = CORE.smoothTimes(t.raw, g.segLen);
+      t.ts = CORE.tripTimestamps(g, t.times);
+    }
+    return t;
+  }
+
+  /* ---------- Estado ---------- */
+  let T = 7 * 3600, playing = true, live = false, speed = 30, trail = 120, hidden = new Set();
+  let active = [], activeKey = '', last = performance.now();
+  let visPats = [], visKey = '';
+  const stopLines = STOPS.map(() => new Set());
+  G.patterns.forEach(p => p.stops.forEach(i => stopLines[i].add(p.line)));
+  const STATIONS = STOPS.map((s, i) => ({ p: [s[0], s[1]], name: s[2], lines: stopLines[i] }));
+  // um rótulo por nome (estações com plataformas separadas, como metrô e bonde, aparecem uma vez)
+  const LABELS = (() => {
+    // linhas por nome de estação (em São Paulo cada linha tem sua própria parada, mesmo nas baldeações)
+    const linesByName = new Map(), terminal = new Set();
+    G.patterns.forEach(p => {
+      p.stops.forEach(i => { const n = STOPS[i][2]; if (!linesByName.has(n)) linesByName.set(n, new Set()); linesByName.get(n).add(p.line); });
+      terminal.add(STOPS[p.stops[0]][2]); terminal.add(STOPS[p.stops[p.stops.length - 1]][2]);
+    });
+    const byName = new Map();
+    STOPS.forEach(s => { if (!byName.has(s[2])) {
+      const n = (linesByName.get(s[2]) || new Set()).size;
+      byName.set(s[2], { p: [s[0], s[1]], name: s[2], lines: linesByName.get(s[2]) || new Set(), priority: n + (terminal.has(s[2]) ? 1 : 0) }); } });
+    return [...byName.values()];
+  })();
+  // para não amontoar nomes: longe, só estações de baldeação; de perto, todas
+  const LABELS_MAJOR = LABELS.filter(d => d.priority >= 2);
+  // estações e nomes somem quando todas as linhas que passam por eles estão ocultas
+  const visCache = new Map(); let visHid = '';
+  const visible = arr => {
+    const k = [...hidden].sort().join(',');
+    if (k !== visHid) { visCache.clear(); visHid = k; }
+    if (!hidden.size) return arr;
+    if (!visCache.has(arr)) visCache.set(arr, arr.filter(d => [...d.lines].some(l => !hidden.has(l))));
+    return visCache.get(arr);
+  };
+  const labelData = () => { const z = map.getZoom(); return z < 10.5 ? null : visible(z < 12.6 ? LABELS_MAJOR : LABELS); };
+
+  /* ---------- Nomes das estações e tema ---------- */
+  let showLabels = false, dark = false;
+  const store = { get: k => { try { return localStorage.getItem(k); } catch (e) { return null; } },
+                  set: (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} } };
+  const MAP_THEME = {
+    light: {
+      bg: ['background-color', '#ecebe7'],
+      landcover: ['fill-color', ['match', ['get', 'class'], 'wood', '#b9d9a0', 'grass', '#cde5b4', 'farmland', '#e3ead2', 'wetland', '#c6e0cf', 'sand', '#efe6cc', '#e4e8d8']],
+      'landuse-green': ['fill-color', '#d3e8c0'], park: ['fill-color', '#bfe0a6'], water: ['fill-color', '#9fcbe8'],
+      waterway: ['line-color', '#9fcbe8'], aeroway: ['fill-color', '#e6e5e1'], rail: ['line-color', '#cfcfcb'],
+      'roads-minor': ['line-color', '#fbfbfa'], 'roads-major': ['line-color', '#ffffff'],
+      'buildings-flat': ['fill-color', '#ffffff'], buildings: ['fill-extrusion-color', '#ffffff']
+    },
+    dark: {
+      bg: ['background-color', '#121418'],
+      landcover: ['fill-color', ['match', ['get', 'class'], 'wood', '#1b2b1f', 'grass', '#1d2e22', 'farmland', '#191e18', 'wetland', '#182a26', 'sand', '#29261f', '#181c19']],
+      'landuse-green': ['fill-color', '#1b2a1f'], park: ['fill-color', '#1e3324'], water: ['fill-color', '#0f2c45'],
+      waterway: ['line-color', '#0f2c45'], aeroway: ['fill-color', '#191b20'], rail: ['line-color', '#3a3e46'],
+      'roads-minor': ['line-color', '#22252c'], 'roads-major': ['line-color', '#2d313a'],
+      'buildings-flat': ['fill-color', '#20232a'], buildings: ['fill-extrusion-color', '#2a2e36']
+    }
+  };
+  function applyTheme(on) {
+    dark = on;
+    document.body.classList.toggle('dark', on);
+    $('themeBtn').classList.toggle('on', on); $('themeBtn').setAttribute('aria-pressed', on);
+    $('themeBtn').title = on ? 'Tema claro' : 'Tema escuro';
+    for (const L of Object.values(LINES)) L.tint = on ? L.tintDark : L.tintLight;
+    if (map.isStyleLoaded() || map.getLayer('bg')) {
+      for (const [id, [prop, val]] of Object.entries(MAP_THEME[on ? 'dark' : 'light'])) if (map.getLayer(id)) map.setPaintProperty(id, prop, val);
+      if (map.getLayer('buildings-flat')) map.setPaintProperty('buildings-flat', 'fill-outline-color', on ? '#2c3038' : '#dcdcd8');
+      if (map.getLayer('hoods')) {
+        map.setPaintProperty('hoods', 'text-color', on ? '#7d848e' : '#7f858e');
+        map.setPaintProperty('hoods', 'text-halo-color', on ? 'rgba(18,20,24,0.85)' : 'rgba(255,255,255,0.85)');
+      }
+      if (map.getLayer('places')) {
+        map.setPaintProperty('places', 'text-color', on ? '#aab0b9' : '#4a4f57');
+        map.setPaintProperty('places', 'text-halo-color', on ? 'rgba(18,20,24,0.9)' : 'rgba(255,255,255,0.9)');
+      }
+    }
+    visKey = '';
+    store.set('vlc-theme', on ? 'dark' : 'light');
+  }
+  function applyLabels(on) {
+    showLabels = on;
+    // com os nomes das estações ligados, os bairros só aparecem bem de perto
+    if (map.getLayer && map.getLayer('hoods')) map.setLayerZoomRange('hoods', on ? 15.5 : 13, 24);
+    $('labelsBtn').classList.toggle('on', on); $('labelsBtn').setAttribute('aria-pressed', on);
+    store.set('vlc-labels', on ? '1' : '0');
+  }
+  $('themeBtn').onclick = () => applyTheme(!dark);
+  $('labelsBtn').onclick = () => applyLabels(!showLabels);
+  // nomes de cidades (camada do mapa de base); ligado por padrão
+  let showPlaces = store.get('metro3d-places') !== '0';
+  function applyPlaces(on) {
+    showPlaces = on;
+    $('placesBtn').classList.toggle('on', on); $('placesBtn').setAttribute('aria-pressed', on);
+    for (const id of ['places', 'hoods']) if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', on ? 'visible' : 'none');
+    store.set('metro3d-places', on ? '1' : '0');
+  }
+  $('placesBtn').onclick = () => applyPlaces(!showPlaces);
+  map.on('load', () => { applyPlaces(showPlaces); applyLabels(showLabels); });
+  applyLabels(store.get('vlc-labels') === '1');
+  // tema escuro é o padrão; o claro fica salvo se a pessoa escolher
+  const startDark = store.get('vlc-theme') !== 'light';
+  document.body.classList.toggle('dark', startDark);
+  map.on('load', () => applyTheme(startDark));
+
+  function legend() {
+    const n = {};
+    for (const t of trips) { const l = G.patterns[t.pat].line; n[l] = (n[l] || 0) + 1; }
+    const num = r => +String(r).replace(/\D/g, '');
+    const refs = Object.keys(LINES).sort((a, b) => num(a) - num(b));
+    $('legend').innerHTML = '';
+    const modes = [...new Set(refs.map(r => LINES[r].mode))];
+    for (const mode of modes) {
+    const mrefs = refs.filter(r => LINES[r].mode === mode), allOff = mrefs.every(r => hidden.has(r));
+    const hd = document.createElement('div'); hd.className = 'lgh' + (allOff ? ' off' : ''); hd.textContent = modeName(mode);
+    hd.title = allOff ? 'Mostrar todas' : 'Ocultar todas';
+    hd.onclick = () => { for (const r of mrefs) allOff ? hidden.delete(r) : hidden.add(r); activeKey = ''; legend(); };
+    $('legend').appendChild(hd);
+    for (const ref of refs.filter(r => LINES[r].mode === mode)) {
+      const L = LINES[ref], el = document.createElement('div');
+      el.className = 'lg' + (hidden.has(ref) ? ' off' : '');
+      el.title = `${n[ref] || 0} viagens neste dia`;
+      el.innerHTML = `<span class="sw" style="background:rgb(${L.color})"></span><span class="ref">${lineName(ref)}</span>`;
+      el.onclick = () => { hidden.has(ref) ? hidden.delete(ref) : hidden.add(ref); activeKey = ''; legend(); };
+      $('legend').appendChild(el);
+    }
+    }
+  }
+
+  const hhmm = s => { s = Math.floor(s); const h = Math.floor(s / 3600) % 24, m = Math.floor(s / 60) % 60; return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`; };
+
+  function frame(now) {
+    const dt = Math.min(0.1, (now - last) / 1000); last = now;
+    if (live) T = madridNow().secs;
+    else if (playing) { T += dt * speed; if (T > tMax) T = tMin; }
+
+    $('clock').textContent = hhmm(T);
+    if (document.activeElement !== $('time')) $('time').value = T;
+    $('timeV').textContent = hhmm(T);
+
+    if (offDirty && geoms.length) applyOffsets();
+    if (geoms.length && trips.length) {
+      // recalcula o conjunto ativo a cada minuto simulado (mantém os dados estáveis para a GPU)
+      const BW = 300; // janela de 5 min simulados: menos recargas de dados na placa de vídeo
+      const bucket = Math.floor(T / BW), key = `${service}|${bucket}|${trail}|${[...hidden].join()}|${geomVer}`;
+      if (key !== activeKey) {
+        activeKey = key;
+        const lo = bucket * BW - trail, hi = bucket * BW + BW;
+        active = trips.filter(t => t.start <= hi && t.end + trail >= lo && !hidden.has(G.patterns[t.pat].line)).map(ensureTs);
+      }
+      const heads = [];
+      for (const t of active) {
+        const p = CORE.posAt(geoms[t.pat].pts, t.ts, T);
+        if (p) { const pat = G.patterns[t.pat]; heads.push({ p, line: pat.line, head: pat.head }); }
+      }
+      $('count').textContent = `${heads.length} trens circulando`;
+
+      // rede: cada trecho de cada linha desenhado uma única vez (espessura e cor uniformes)
+      const vk = [...hidden].join() + '|' + offVer;
+      if (vk !== visKey) {
+        visKey = vk; visPats = [];
+        const seen = new Set();
+        G.patterns.forEach((p, i) => {
+          if (hidden.has(p.line)) return;
+          const g = geoms[i];
+          let v = 0;
+          while (v < g.pts.length) {
+            const k = g.seg[v], start = v;
+            while (v < g.pts.length && g.seg[v] === k) v++;
+            const a = p.stops[k], b = p.stops[k + 1], key = p.line + '|' + Math.min(a, b) + '|' + Math.max(a, b);
+            if (seen.has(key)) continue;
+            seen.add(key);
+            // viagens raras (ex.: idas à garagem) não desenham faixa própria
+            const inf = SEGMAP.get(a + '|' + b);
+            if (!inf || !inf.f || !inf.f[p.line]) continue;
+            visPats.push({ line: p.line, name: p.name, path: g.pts.slice(start, v) });
+          }
+        });
+      }
+      overlay.setProps({ layers: [
+        new deck.PathLayer({ id: 'casing', parameters: NODEPTH, data: visPats, getPath: p => p.path,
+          getColor: dark ? [18, 20, 24] : [255, 255, 255], getWidth: LINE_W + 2, widthUnits: 'pixels', capRounded: true, jointRounded: true }),
+        new deck.PathLayer({ id: 'lines', parameters: NODEPTH, data: visPats, getPath: p => p.path,
+          getColor: p => LINES[p.line].tint, getWidth: LINE_W, widthUnits: 'pixels',
+          capRounded: true, jointRounded: true, pickable: true, updateTriggers: { getColor: dark } }),
+        new deck.ScatterplotLayer({ id: 'stations', parameters: NODEPTH, data: visible(STATIONS), getPosition: d => d.p,
+          getFillColor: dark ? [30, 33, 39] : [255, 255, 255],
+          getLineColor: showLabels ? (dark ? [235, 238, 242] : [30, 32, 36]) : (dark ? [120, 126, 136] : [140, 140, 140]),
+          stroked: true, lineWidthUnits: 'pixels', getLineWidth: showLabels ? 2 : 1,
+          getRadius: 10, radiusUnits: 'meters', radiusMinPixels: showLabels ? 4.5 : 2.5, radiusMaxPixels: showLabels ? 9 : 7,
+          pickable: true, updateTriggers: { getFillColor: dark, getLineColor: [dark, showLabels], getLineWidth: showLabels } }),
+        new deck.TripsLayer({ id: 'trails', parameters: NODEPTH, data: active, getPath: t => geoms[t.pat].pts, getTimestamps: t => t.ts,
+          getColor: t => LINES[G.patterns[t.pat].line].color, widthUnits: 'pixels', getWidth: LINE_W, capRounded: true, jointRounded: true,
+          trailLength: Math.max(1, trail), fadeTrail: true, currentTime: T, updateTriggers: { getPath: offVer } }),
+        new deck.ScatterplotLayer({ id: 'heads', parameters: NODEPTH, data: heads, getPosition: d => d.p,
+          getFillColor: d => LINES[d.line].color, getLineColor: dark ? [18, 20, 24] : [255, 255, 255], lineWidthMinPixels: 1.5,
+          stroked: true, radiusUnits: 'meters', getRadius: 16, radiusMinPixels: 4, radiusMaxPixels: 14, pickable: true,
+          updateTriggers: { getLineColor: dark } }),
+        showLabels && labelData() && new deck.TextLayer({ id: 'labels', data: labelData(), getPosition: d => d.p, getText: d => d.name,
+          getSize: 12, sizeUnits: 'pixels', getPixelOffset: [10, 0], getTextAnchor: 'start', getAlignmentBaseline: 'center',
+          fontFamily: 'Inter, system-ui, sans-serif', fontWeight: 600, characterSet: 'auto',
+          fontSettings: { sdf: true, fontSize: 64, buffer: 8 }, outlineWidth: 6,
+          getColor: dark ? [236, 239, 243] : [28, 30, 34], outlineColor: dark ? [18, 20, 24, 235] : [255, 255, 255, 240],
+          parameters: NODEPTH, updateTriggers: { getColor: dark } })
+      ].filter(Boolean) });
+    }
+    requestAnimationFrame(frame);
+  }
+
+  /* ---------- Controles ---------- */
+  const setLive = on => {
+    live = on;
+    $('liveBtn').classList.toggle('on', live);
+    $('liveTag').innerHTML = live ? '<span class="live">AO VIVO · horário programado</span>' : '';
+    if (live) { sel.value = todaySvc; setService(todaySvc); }
+  };
+  $('play').onclick = () => { if (live) setLive(false); playing = !playing; $('play').textContent = playing ? 'Pausar' : 'Continuar'; };
+  $('liveBtn').onclick = () => setLive(!live);
+  $('speed').oninput = e => { if (live) setLive(false); speed = +e.target.value; $('speedV').textContent = speed + '×'; };
+  document.querySelectorAll('#bmode button').forEach(btn => btn.onclick = () => {
+    const m = btn.dataset.m;
+    document.querySelectorAll('#bmode button').forEach(x => x.classList.toggle('on', x === btn));
+    map.setLayoutProperty('buildings', 'visibility', m === '3d' ? 'visible' : 'none');
+    map.setLayoutProperty('buildings-flat', 'visibility', m === 'flat' ? 'visible' : 'none');
+  });
+
+  /* ---------- Seleção de cidade ---------- */
+  const CITIES = [
+    { country: 'Espanha', items: [{ id: 'valencia', name: 'Valencia', ready: true }] },
+    { country: 'Portugal', items: [{ id: 'lisboa', name: 'Lisboa', ready: true }] },
+    { country: 'Brasil', items: [{ id: 'sao-paulo', name: 'São Paulo', ready: true }] }
+  ];
+  const CURRENT_CITY = cityId;
+  const menu = $('cityMenu'), cityBtn = $('cityBtn');
+  menu.innerHTML = CITIES.map(g => `<div class="grp">${g.country}</div>` + g.items.map(c =>
+    `<button class="opt" role="menuitem" data-city="${c.id}" ${c.ready ? '' : 'disabled'}>${c.name}` +
+    (c.id === CURRENT_CITY ? '<span class="check">✓</span>' : c.ready ? '' : '<small>em breve</small>') + '</button>').join('')).join('');
+  const setMenu = open => { menu.classList.toggle('open', open); cityBtn.setAttribute('aria-expanded', open); };
+  cityBtn.onclick = e => { e.stopPropagation(); setMenu(!menu.classList.contains('open')); };
+  document.addEventListener('click', e => { if (!menu.contains(e.target)) setMenu(false); });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') setMenu(false); });
+  // aviso sonoro característico do metrô de cada cidade, tocado ao trocar de cidade
+  const CHIMES = JSON.parse($('chimes').textContent);
+  let switching = false;
+  menu.querySelectorAll('.opt:not([disabled])').forEach(o => o.onclick = () => {
+    setMenu(false);
+    const id = o.dataset.city;
+    if (id === cityId || switching) return;
+    switching = true;
+    try { localStorage.setItem(CITY_KEY, id); } catch (e) {}
+    $('switchName').textContent = CITY_CFG[id].name; $('switchCountry').textContent = CITY_CFG[id].country;
+    $('switchOverlay').classList.add('on');
+    const go = () => { location.replace(location.href.split('#')[0] + '#' + id); location.reload(); };
+    let done = false; const finish = () => { if (!done) { done = true; go(); } };
+    try {
+      const a = new Audio(CHIMES[id]);
+      a.addEventListener('ended', finish);
+      a.play().catch(() => setTimeout(finish, 600));   // sem som (bloqueado): segue mesmo assim
+      setTimeout(finish, 4000);                        // garantia
+    } catch (e) { setTimeout(finish, 600); }
+  });
+  try { localStorage.setItem(CITY_KEY, cityId); } catch (e) {}
+  window.addEventListener('hashchange', () => { const id = location.hash.slice(1); if (!switching && CITY_CFG[id] && id !== cityId) location.reload(); });
+  $('time').oninput = e => { if (live) setLive(false); T = +e.target.value; };
+  sel.onchange = () => { if (live && sel.value !== todaySvc) setLive(false); setService(sel.value); };
+
+  setService(todaySvc);
+
+  map.on('load', () => {
+    buildGeoms();
+    requestAnimationFrame(frame);
+  });
+})();
+</script>
+</body>
+</html>
