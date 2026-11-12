@@ -409,8 +409,8 @@ if (typeof module !== 'undefined') module.exports = CORE;
 /* =================== FIM CORE =================== */
 </script>
 
-<script>(async () => {
-if (typeof window !== 'undefined' && window.maplibregl) (function () {
+<script>
+if (typeof window !== 'undefined' && window.maplibregl) (async function () {
   const $ = id => document.getElementById(id);
   const status = msg => { $('status').innerHTML = msg; };
   /* ---------- Cidades ---------- */
@@ -982,7 +982,6 @@ if (typeof window !== 'undefined' && window.maplibregl) (function () {
     buildGeoms();
     requestAnimationFrame(frame);
   });
-})();
 })();
 </script>
 </body>
