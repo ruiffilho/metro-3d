@@ -539,6 +539,9 @@ if (typeof window !== 'undefined' && window.maplibregl) (async function () {
     pixelRatio: Math.min(window.devicePixelRatio || 1, 1.5), fadeDuration: 0 });
   map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'bottom-right');
   window.__map = map;
+  // se o servidor de mapas falhar em alguns blocos, tenta de novo depois (no máximo a cada 5 s)
+  let retryT = null;
+  map.on('error', e => { if (e.sourceId === 'omt' && !retryT) retryT = setTimeout(() => { retryT = null; try { map.style.sourceCaches.omt.reload(); } catch (err) {} }, 5000); });
   map.on('error', e => { (window.__mapErr ||= []).push({ msg: e.error && e.error.message, src: e.sourceId, tile: e.tile && e.tile.tileID && e.tile.tileID.canonical && [e.tile.tileID.canonical.z, e.tile.tileID.canonical.x, e.tile.tileID.canonical.y] }); });
   document.querySelectorAll('[data-fly]').forEach(b => b.onclick = () => map.flyTo({ ...VIEWS[b.dataset.fly], duration: 2500, essential: true }));
 
