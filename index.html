@@ -421,21 +421,21 @@ if (typeof window !== 'undefined' && window.maplibregl) (async function () {
         ['centro', 'Centro', { center: [-0.3763, 39.4735], zoom: 15.2, pitch: 62, bearing: -28 }],
         ['ayto', 'Pl. Ayuntamiento', { center: [-0.3765, 39.4697], zoom: 17, pitch: 68, bearing: 25 }],
         ['cac', 'Ciutat de les Arts', { center: [-0.3520, 39.4560], zoom: 15.8, pitch: 64, bearing: -60 }],
-        ['geral', 'Visão geral', { center: [-0.4050, 39.4900], zoom: 11.3, pitch: 45, bearing: -15 }] ] },
+        ['geral', 'Visão geral', { center: [-0.4050, 39.4900], zoom: 11.3, pitch: 0, bearing: 0 }] ] },
     'sao-paulo': { name: 'São Paulo', country: 'Brasil', tz: 'America/Sao_Paulo', lon: -46.63, lat: -23.55,
       modes: {},
       views: [
         ['centro', 'Centro', { center: [-46.6345, -23.5470], zoom: 14.6, pitch: 60, bearing: -20 }],
         ['paulista', 'Av. Paulista', { center: [-46.6560, -23.5630], zoom: 15, pitch: 62, bearing: 50 }],
         ['luz', 'Luz', { center: [-46.6350, -23.5350], zoom: 16, pitch: 64, bearing: -35 }],
-        ['geral', 'Visão geral', { center: [-46.6100, -23.5600], zoom: 10.2, pitch: 40, bearing: -10 }] ] },
+        ['geral', 'Visão geral', { center: [-46.6100, -23.5600], zoom: 10.2, pitch: 0, bearing: 0 }] ] },
     lisboa: { name: 'Lisboa', country: 'Portugal', tz: 'Europe/Lisbon', lon: -9.14, lat: 38.72,
       modes: {},
       views: [
         ['baixa', 'Baixa', { center: [-9.1380, 38.7110], zoom: 15, pitch: 62, bearing: -20 }],
         ['oriente', 'Oriente', { center: [-9.1000, 38.7680], zoom: 15, pitch: 62, bearing: 40 }],
         ['ponte', 'Ponte 25 de Abril', { center: [-9.1770, 38.6900], zoom: 13.6, pitch: 58, bearing: 30 }],
-        ['geral', 'Visão geral', { center: [-9.1500, 38.7100], zoom: 10.3, pitch: 40, bearing: -10 }] ] }
+        ['geral', 'Visão geral', { center: [-9.1500, 38.7100], zoom: 10.3, pitch: 0, bearing: 0 }] ] }
   };
   const CITY_KEY = 'metro3d-city';
   let cityId = (location.hash || '').slice(1);
