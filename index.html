@@ -83,6 +83,7 @@
   .lg.off { opacity:.3; }
   .sw { width:22px; height:6px; border-radius:3px; flex:none; }
   .lg .ref { font-weight:600; }
+  .lg .sub { margin-left:-3px; color:var(--muted); font-size:11.5px; overflow:hidden; text-overflow:ellipsis; min-width:0; }
   .lgh { grid-column:1 / -1; font-size:10px; font-weight:600; letter-spacing:.12em; text-transform:uppercase; color:var(--muted); padding:6px 8px 1px; }
   .lgh:first-child { padding-top:0; }
   .lgh { cursor:pointer; user-select:none; border-radius:7px; justify-self:start; }
@@ -447,6 +448,7 @@ if (typeof window !== 'undefined' && window.maplibregl) (async function () {
   const FREQ = !!G.freq;
   if (FREQ) { G.services = { all: [] }; G.labels = { all: 'Todos os dias' }; G.calendar = {}; }
   const lineName = ref => (G.lines[ref] && G.lines[ref].name) || (/^\d/.test(ref) ? 'L' + ref : ref);
+  const lineFull = ref => lineName(ref) + (G.lines[ref] && G.lines[ref].sub ? '-' + G.lines[ref].sub : '');
   const modeName = m => CFG.modes[m] || m;
   document.title = CFG.name + ' · Metrô 3D';
   $('cityName').textContent = CFG.name; $('countryName').textContent = CFG.country;
@@ -549,9 +551,9 @@ if (typeof window !== 'undefined' && window.maplibregl) (async function () {
   const NODEPTH = { depthCompare: 'always', depthWriteEnabled: false };
   const getTooltip = ({ object, layer }) => {
       if (!object) return null;
-      if (layer.id === 'heads') return { html: `<b>${lineName(object.line)}</b> → ${object.head}`, style: tip };
+      if (layer.id === 'heads') return { html: `<b>${lineFull(object.line)}</b> → ${object.head}`, style: tip };
       if (layer.id === 'stations') return { html: object.name, style: tip };
-      if (layer.id === 'lines') return { html: `<b>${lineName(object.line)}</b> ${object.name}`, style: tip };
+      if (layer.id === 'lines') return { html: `<b>${lineFull(object.line)}</b> ${object.name}`, style: tip };
       return null;
     };
   let overlay = null;
@@ -836,7 +838,7 @@ if (typeof window !== 'undefined' && window.maplibregl) (async function () {
       const L = LINES[ref], el = document.createElement('div');
       el.className = 'lg' + (hidden.has(ref) ? ' off' : '');
       el.title = `${n[ref] || 0} viagens neste dia`;
-      el.innerHTML = `<span class="sw" style="background:rgb(${L.color})"></span><span class="ref">${lineName(ref)}</span>`;
+      el.innerHTML = `<span class="sw" style="background:rgb(${L.color})"></span><span class="ref">${lineName(ref)}</span>${G.lines[ref].sub ? `<span class="sub">${G.lines[ref].sub}</span>` : ''}`;
       el.onclick = () => { hidden.has(ref) ? hidden.delete(ref) : hidden.add(ref); activeKey = ''; legend(); };
       $('legend').appendChild(el);
     }
