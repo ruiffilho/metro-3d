@@ -2,7 +2,7 @@
 <html lang="pt-BR">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Metrô 3D</title>
 <link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet">
 <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
@@ -109,6 +109,39 @@
   .fab svg { width:18px; height:18px; }
   .fab .aa { font-size:14px; font-weight:600; letter-spacing:-.02em; }
   .maplibregl-ctrl-bottom-right { margin-bottom:6px; }
+  .grab { display:none; }
+
+  /* ---------- celular: painel vira uma gaveta embaixo ---------- */
+  @media (max-width: 640px) {
+    .panel { top:auto; left:0; right:0; bottom:0; width:auto; max-height:78vh; border-radius:22px 22px 0 0;
+      padding:4px 16px calc(12px + env(safe-area-inset-bottom)); border-bottom:0; }
+    .grab { display:flex; flex-direction:column; align-items:center; gap:4px; width:100%; border:0; background:none; padding:6px 0 4px; border-radius:0; }
+    .grab:hover { background:none !important; }
+    .grab .bar { width:38px; height:5px; border-radius:3px; background:var(--muted); opacity:.45; }
+    .grab .lbl { font-size:10.5px; font-weight:600; letter-spacing:.12em; text-transform:uppercase; color:var(--muted); }
+    .panel:not(.open) .more { display:none; }
+    .panel.open .grab .lbl::after { content:' ▾'; }
+    .panel:not(.open) .grab .lbl::after { content:' ▴'; }
+    .head { display:grid; grid-template-columns:1fr auto; align-items:center; column-gap:8px; }
+    .head .city { grid-column:1; grid-row:1 / span 2; text-align:left; padding:4px 4px; }
+    .head .city .name { font-size:22px; }
+    .head .clock { grid-column:2; grid-row:1; font-size:34px; margin:0; text-align:right; }
+    .head .count { grid-column:2; grid-row:2; text-align:right; font-size:11px; }
+    .head #liveTag { grid-column:2; grid-row:3; text-align:right; }
+    .head .btns { grid-column:1 / -1; grid-row:4; margin:8px 0 2px; }
+    .head .btns button { flex:1; padding:9px 12px; font-size:13px; }
+    .row { margin:12px 0; font-size:13px; }
+    .seg button { padding:8px 0; font-size:13px; }
+    .btns button { padding:8px 12px; }
+    .lg { padding:8px 8px; font-size:13px; }
+    .citymenu { position:fixed; top:auto; bottom:calc(140px + env(safe-area-inset-bottom)); left:12px; right:12px; width:auto; max-height:60vh; overflow:auto; }
+    .citymenu .opt { padding:12px; font-size:15px; }
+    .fab { top:calc(10px + env(safe-area-inset-top)); right:10px; }
+    .fab button { width:36px; height:36px; }
+    .maplibregl-ctrl-bottom-right { bottom:auto; top:calc(6px + env(safe-area-inset-top)); right:auto; left:0; margin:0; }
+    .maplibregl-ctrl-bottom-right .maplibregl-ctrl-group { display:none; }
+    .switch .n { font-size:40px; }
+  }
 
   /* tema escuro */
   :root { --bg-solid:#ffffff; }
@@ -132,7 +165,9 @@
 <body>
 <div id="map"></div>
 
-<div class="panel glass">
+<div class="panel glass" id="panel">
+  <button class="grab" id="sheetBtn" aria-expanded="false"><span class="bar"></span><span class="lbl">Controles e linhas</span></button>
+  <div class="head">
   <button class="city" id="cityBtn" aria-haspopup="true" aria-expanded="false">
     <span class="name"><span id="cityName">Valencia</span><svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M2.5 4.5 6 8l3.5-3.5"/></svg></span>
     <span class="country" id="countryName">Espanha</span>
@@ -146,7 +181,9 @@
     <button class="primary" id="play">Pausar</button>
     <button id="liveBtn">Ao vivo</button>
   </div>
+  </div>
 
+  <div class="more">
   <div class="divider"></div>
 
   <div class="row"><label>Dia</label><select id="service"></select></div>
@@ -161,6 +198,7 @@
   <div class="sec">Linhas</div>
   <div class="legend" id="legend"></div>
   <div id="status">Arraste com o botão direito (ou Ctrl) para girar.</div>
+  </div>
 </div>
 
 <div class="citymenu glass" id="cityMenu" role="menu"></div>
@@ -949,6 +987,9 @@ if (typeof window !== 'undefined' && window.maplibregl) (async function () {
     { country: 'Brasil', items: [{ id: 'sao-paulo', name: 'São Paulo', ready: true }] }
   ];
   const CURRENT_CITY = cityId;
+  // celular: gaveta abre/fecha; dica de gestos de toque
+  $('sheetBtn').onclick = () => { const o = $('panel').classList.toggle('open'); $('sheetBtn').setAttribute('aria-expanded', o); };
+  if (window.matchMedia('(pointer: coarse)').matches) $('status').textContent = 'Use dois dedos para girar e inclinar o mapa.';
   const menu = $('cityMenu'), cityBtn = $('cityBtn');
   menu.innerHTML = CITIES.map(g => `<div class="grp">${g.country}</div>` + g.items.map(c =>
     `<button class="opt" role="menuitem" data-city="${c.id}" ${c.ready ? '' : 'disabled'}>${c.name}` +
