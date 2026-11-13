@@ -444,7 +444,7 @@ if (typeof window !== 'undefined' && window.maplibregl) (async function () {
   const CFG = CITY_CFG[cityId];
   CORE.setOrigin(CFG.lon, CFG.lat);
   const KLAT = Math.cos(CFG.lat * Math.PI / 180);
-  const G = await (await fetch('data/' + cityId + '.json')).json();
+  const G = await (await fetch('data/' + cityId + '.json?v=95a3d4df')).json();
   const FREQ = !!G.freq;
   if (FREQ) { G.services = { all: [] }; G.labels = { all: 'Todos os dias' }; G.calendar = {}; }
   const lineName = ref => (G.lines[ref] && G.lines[ref].name) || (/^\d/.test(ref) ? 'L' + ref : ref);
@@ -958,7 +958,7 @@ if (typeof window !== 'undefined' && window.maplibregl) (async function () {
   document.addEventListener('click', e => { if (!menu.contains(e.target)) setMenu(false); });
   document.addEventListener('keydown', e => { if (e.key === 'Escape') setMenu(false); });
   // aviso sonoro característico do metrô de cada cidade, tocado ao trocar de cidade
-  const CHIMES = new Proxy({}, { get: (_, id) => 'audio/' + id + '.mp3' });
+  const CHIMES = new Proxy({}, { get: (_, id) => 'audio/' + id + '.mp3?v=95a3d4df' });
   let switching = false;
   menu.querySelectorAll('.opt:not([disabled])').forEach(o => o.onclick = () => {
     setMenu(false);

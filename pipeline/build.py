@@ -10,10 +10,16 @@ assert s.count(a0) == 1
 s = s.replace(a0, "if (typeof window !== 'undefined' && window.maplibregl) (async function () {")
 a = "  const G = JSON.parse($('city-' + cityId).textContent);"
 assert a in s
-s = s.replace(a, "  const G = await (await fetch('data/' + cityId + '.json')).json();")
+# versão = hash dos dados e sons: o navegador não reaproveita arquivos antigos do cache depois de uma atualização
+import hashlib
+hsh = hashlib.sha1()
+for d in ('data', os.path.join('pipeline', 'chimes')):
+    for f in sorted(os.listdir(os.path.join(ROOT, d))): hsh.update(open(os.path.join(ROOT, d, f), 'rb').read())
+VER = hsh.hexdigest()[:8]
+s = s.replace(a, "  const G = await (await fetch('data/' + cityId + '.json?v=" + VER + "')).json();")
 a = "  const CHIMES = JSON.parse($('chimes').textContent);"
 assert a in s
-s = s.replace(a, "  const CHIMES = new Proxy({}, { get: (_, id) => 'audio/' + id + '.mp3' });")
+s = s.replace(a, "  const CHIMES = new Proxy({}, { get: (_, id) => 'audio/' + id + '.mp3?v=" + VER + "' });")
 open(os.path.join(ROOT, 'index.html'), 'w').write(s)
 os.makedirs(os.path.join(ROOT, 'audio'), exist_ok=True)
 for f in os.listdir(os.path.join(P, 'chimes')):

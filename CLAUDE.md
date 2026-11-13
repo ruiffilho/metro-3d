@@ -5,6 +5,7 @@ Site: https://ruiffilho.github.io/metro-3d/ (GitHub Pages, ramo `main`, raiz). R
 
 ## Estrutura
 - `index.html` — gerado por `pipeline/build.py` a partir de `pipeline/template.html`. **Nunca editar à mão.**
+  O `build.py` põe `?v=<hash dos dados>` nos fetch de dados e sons, para o navegador não usar arquivos antigos do cache.
 - `data/<cidade>.json` — dados finais de cada cidade (carregados só quando a cidade é escolhida).
 - `audio/<cidade>.mp3` — aviso sonoro do metrô de cada cidade (copiado de `pipeline/chimes/`).
 - `pipeline/` — scripts: `osm_route.js` + `make_route.py` + `enc_to_segs.py` (geometria pelo OSM),
